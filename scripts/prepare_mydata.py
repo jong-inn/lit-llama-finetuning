@@ -47,11 +47,11 @@ def prepare(
 
     print("Processing train split ...")
     train_set = [prepare_sample(sample, tokenizer, max_seq_length, mask_inputs) for sample in tqdm(train_set)]
-    torch.save(train_set, training_path.parent / "train.pt")
+    torch.save(train_set, destination_path / "train.pt")
 
     print("Processing validation split ...")
     test_set = [prepare_sample(sample, tokenizer, max_seq_length, mask_inputs) for sample in tqdm(test_set)]
-    torch.save(test_set, validation_path.parent / "validation.pt")
+    torch.save(test_set, destination_path / "validation.pt")
 
 
 def prepare_sample(example: dict, tokenizer: Tokenizer, max_length: int, mask_inputs: bool = True):
