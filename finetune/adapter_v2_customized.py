@@ -21,6 +21,7 @@ import lightning as L
 import numpy as np
 import torch
 import torch.nn as nn
+import wandb
 
 # support running without installing as a package
 wd = Path(__file__).parent.parent.resolve()
@@ -84,6 +85,16 @@ def main(
     out_dir: str = "out/adapter_v2/alpaca",
 ):
 
+    wandb.init(
+        project = "Lit LLAMA Instruction FineTuning",
+        config = {
+            "learning_rate":learning_rate,
+            "batch_size": batch_size,
+            "epoch_size": epoch_size,
+            "num_epochs": max_epochs
+        }
+    )
+
     fabric = L.Fabric(
         accelerator="cuda",
         devices=1,
@@ -125,6 +136,8 @@ def main(
     # Save the final checkpoint at the end of training
     save_model_checkpoint(fabric, model, os.path.join(out_dir, "lit-llama-adapter-finetuned.pth"))
 
+    wandb.finish()
+
 
 def train(
     fabric: L.Fabric,
@@ -158,6 +171,9 @@ def train(
             logits = model(input_ids)
             loss = loss_fn(logits, targets)
             fabric.backward(loss / gradient_accumulation_iters)
+        
+        wandb.log({"loss": loss.item()})
+        #Figure THIS OUT!!! 
 
         prev_loss = np.Inf
         if (iter_num + 1) % gradient_accumulation_iters == 0:
@@ -222,6 +238,7 @@ def validate(fabric: L.Fabric, model: torch.nn.Module, val_data: np.ndarray) -> 
         loss = loss_fn(logits, targets)
         losses[k] = loss.item()
     val_loss = losses.mean()
+    wandb.log({"val_loss": val_loss.item()})
 
     # produce an example:
     instruction = "Recommend a movie for me to watch during the weekend and explain the reason."
