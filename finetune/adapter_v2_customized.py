@@ -41,7 +41,7 @@ from lightning.fabric.strategies import DeepSpeedStrategy
 save_interval = 1000
 eval_iters = 100
 log_interval = 50 # Changed
-devices = 2 # Changed
+devices = 1 # Changed
 
 """
 Early Stopping?
@@ -56,7 +56,7 @@ batch size = micro_batch_size * data_parallel_size * gradient_accumulation_steps
 # Hyperparameters
 learning_rate = 9e-3
 batch_size = 64 / devices
-micro_batch_size = 8 # Changed
+micro_batch_size = 2 # Changed
 gradient_accumulation_iters = batch_size // micro_batch_size
 assert gradient_accumulation_iters > 0
 epoch_size = 1000  # train dataset size
@@ -70,7 +70,8 @@ weight_decay = 0.02
 max_seq_length = 256  # see scripts/prepare_alpaca.py
 warmup_iters = 2 * (epoch_size // micro_batch_size) // devices  # 2 epoch
 required_iters = 1 * (epoch_size // micro_batch_size) // devices # Added
-eval_interval = 1 * (epoch_size // micro_batch_size) // devices # Changed, validation_steps
+# eval_interval = 1 * (epoch_size // micro_batch_size) // devices # Changed, validation_steps
+eval_interval = 16 #Eval Approx twice per epoch
 
 ds_config = {
     "train_micro_batch_size_per_gpu": micro_batch_size,
@@ -172,14 +173,33 @@ def train(
             loss = loss_fn(logits, targets)
             fabric.backward(loss / gradient_accumulation_iters)
         
-        wandb.log({"loss": loss.item()})
+        # wandb.log({"loss": loss.item()})
         #Figure THIS OUT!!! 
+
+        #mb = 2                                       mb=4
+        #32 iters = 64 batch processed                16 iters = 64 batch processed
+        #500 iters = 1 Epoch Size processed           250 iters = 1 Epoch Size processed
+        #2450 iters = 5 epoch nums                    1000 iters = 1 Epoch Size processed
+
+        #15.1625 step counts = 1 epoch, 77 step counts = 5 epochs  || 15. step counts = 1 epoch. 77 step counts = 5 epochs
+
+        #Mini Batch Size More = Step Counts More (less iters to cover entire 64 batch)
+        # Why does val step occur only once % 500 for mb = 2 and once % 125 for mb = 8? It seems eval_interval
+        # is fixed in the og code. occuring twice for 3 epochs. 
+        #Total Val steps remains the same. normally for mb=64, step count = 1, for mb=2, step count=32
+        #for mb larger, max_iters would be less, step counts would be quicker.
+        #for mb smaller, max_iters would be more, step counts would be slower.
+        #Rate for eval remains the same. 
+
+        #WANDB: Each Step is the processing of one batch of 64 examples
 
         prev_loss = np.Inf
         if (iter_num + 1) % gradient_accumulation_iters == 0:
             optimizer.step()
             optimizer.zero_grad()
             step_count += 1
+
+            wandb.log({"loss": loss.item()})
                 
             if step_count % eval_interval == 0:
                 val_loss = validate(fabric, model, val_data)
