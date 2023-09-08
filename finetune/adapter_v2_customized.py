@@ -44,9 +44,12 @@ log_interval = 50 # Changed
 devices = 1 # Changed
 
 """
-Early Stopping?
-
+Early Stopping
 """
+
+best_val_loss = float('inf')
+patience = 12  # Number of evaluation intervals to wait before stopping if no improvement
+no_improve_counter = 0
 
 """
 batch size = micro_batch_size * data_parallel_size * gradient_accumulation_steps.
@@ -61,7 +64,7 @@ gradient_accumulation_iters = batch_size // micro_batch_size
 assert gradient_accumulation_iters > 0
 epoch_size = 1000  # train dataset size
 
-max_epochs = 20 # Added
+max_epochs = 50 # Added
 # num_epochs = 5
 
 # max_iters = num_epochs * (epoch_size // micro_batch_size) // devices
@@ -153,7 +156,8 @@ def train(
     Loosely based on the nanoGPT implementation: https://github.com/karpathy/nanoGPT.
     """
     # Early Stopper
-    early_stopping = [False, False, False]
+    global best_val_loss
+    global no_improve_counter
     
     step_count = 0
 
@@ -207,18 +211,21 @@ def train(
                 fabric.print(f"step {iter_num}: val loss {val_loss:.4f}")
                 fabric.barrier()
                 # Early Stopping
-                if (iter_num > required_iters) and (np.abs(val_loss-prev_loss) < 1e-4):
-                    early_stopping.pop(0)
-                    early_stopping.append(True)
-                    
-                    # We stop training if three validation losses are smaller than the criteria in a row.
-                    if sum(early_stopping) == 3:
+                if step_count % eval_interval == 0:
+                    val_loss = validate(fabric, model, val_data)
+                    fabric.print(f"step {iter_num}: val loss {val_loss:.4f}")
+                    fabric.barrier()
+
+                    # Early stopping check
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        no_improve_counter = 0
+                    else:
+                        no_improve_counter += 1
+
+                    if no_improve_counter >= patience:
+                        fabric.print("Early stopping due to no improvement in validation loss")
                         break
-                else:
-                    early_stopping.pop(0)
-                    early_stopping.append(False)
-                    
-                prev_loss = val_loss
 
             if step_count % save_interval == 0:
                 print(f"Saving adapter weights to {out_dir}")
