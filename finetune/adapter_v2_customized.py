@@ -48,7 +48,7 @@ Early Stopping
 """
 
 best_val_loss = float('inf')
-patience = 12  # Number of evaluation intervals to wait before stopping if no improvement
+patience = 8  # Number of evaluation intervals to wait before stopping if no improvement
 no_improve_counter = 0
 
 """
